@@ -101,6 +101,22 @@ class BaseModuleService:
             "abnormal": sum(1 for row in rows if row.get("abnormal")),
         }
 
+    def empty_reason(self, filters: dict[str, str] | None = None,
+                     status: str | None = None) -> str:
+        """列表为空时的可读原因。
+
+        默认给出仓库级说明；领域服务可以覆盖成更具体的口径，避免接口只返回
+        空数组却让调用方分不清"没有数据"和"查询失败"。
+        """
+        conditions = []
+        for field, value in (filters or {}).items():
+            if value:
+                conditions.append(f"{field}={value}")
+        if status:
+            conditions.append(f"状态={status}")
+        scope = "、".join(conditions) if conditions else "当前查询条件"
+        return f"{scope}下没有可展示的{self.ENTITY}记录"
+
     # -- 文件 IO 工具 --
 
     def _data_dir(self, sub: str) -> Path:
@@ -132,6 +148,36 @@ class BaseModuleService:
                     except json.JSONDecodeError:
                         continue
         return records
+
+    def _write_jsonl_replace(self, filepath: Path, records: list[dict[str, Any]]) -> int:
+        """覆盖写入JSONL文件，返回写入条数。
+
+        与 `_write_jsonl` 的追加语义不同，重算类产物必须整份替换，
+        否则重试会把同一格重复写进结果集，导致明细与汇总对不上。
+        """
+        _ensure_dir(filepath.parent)
+        with open(filepath, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+        return len(records)
+
+    def _write_json_file(self, filepath: Path, payload: dict[str, Any]) -> Path:
+        """覆盖写入单个JSON文件，用于领取单、审核单等不可变凭证。"""
+        _ensure_dir(filepath.parent)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2, default=str)
+        return filepath
+
+    def _read_json_file(self, filepath: Path) -> dict[str, Any] | None:
+        """读取单个JSON文件，不存在或内容损坏时返回None。"""
+        if not filepath.exists():
+            return None
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _write_checkpoint(self, name: str, state: dict[str, Any]) -> Path:
         """将状态数据写入检查点文件，供跨模块恢复中断处理。"""

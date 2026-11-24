@@ -79,3 +79,31 @@ npm run dev
 
 领域：数据工程
 子方向：数据分析与数据应用
+
+## 坐标格时窗口与样本资格
+
+坐标标准化除了维护转换规则，还按「格 + 时间窗」登记窗口，供巡检与热力侧
+区分临时估算和正式统计。接口挂在 `/api/coord-windows` 下：
+
+| 用途 | 接口 |
+| --- | --- |
+| 登记窗口（可按 `limit` 模拟中断，重试从检查点续算） | `POST /api/coord-windows/build` |
+| 查窗口（带观测状态、样本资格、空窗原因） | `GET /api/coord-windows?batch_key=...` |
+| 巡检临时领取 | `POST /api/coord-windows/claims/inspection` |
+| 正式领取（审核前发起，`scope=all` / `zero_only`） | `POST /api/coord-windows/claims/formal` |
+| 独立审核（确认观测、纠偏、确认零窗） | `POST /api/coord-windows/audits` |
+| 审核后确认领取，产出正式版本 | `POST /api/coord-windows/claims/{claim_id}/confirm` |
+| 按领取号复算（只读凭证快照） | `GET /api/coord-windows/claims/{claim_id}/replay` |
+| 正式结果 / 版本列表 | `GET /api/coord-windows/formal/{batch_key}[/versions]` |
+| 热力侧按格查看资格 | `GET /api/coord-windows/heatmap/{batch_key}` |
+
+约定：
+
+- 观测状态分 `无观测`、`无有效坐标`、`待校验`、`已确认`，空窗必须带 `empty_reason`；
+  登记空批次返回原因而不是报错，也不返回空响应。
+- 样本资格分 `无样本`、`不可用`、`待校验`、`临时样本`、`正式样本`；热力数据里
+  `临时估算` 与 `正式统计` 分列，临时值不会顶替正式值。
+- 领取号是快照：采用点、坐标诊断、逐点贡献都冻结在凭证里，原始点文件之后
+  被改动，旧领取号仍能复算出当时的值。
+- 正式结果按版本落盘（`v1`、`v2`…），逐点明细随版本冻结；确认可以只交付
+  已确认的零观测窗（`delivery=zero_only`），其余窗另起领取。
